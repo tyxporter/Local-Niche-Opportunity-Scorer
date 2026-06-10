@@ -1,0 +1,20 @@
+# Secrets
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Data-layer cache (freshness-stamped fetches; never source of truth)
+.cache/
+
+# Generated firm-facing deliverables — never commit client docs
+*.docx
+
+# OS
+.DS_Store

@@ -1,0 +1,18 @@
+# Local Niche Opportunity Scorer — Python dependencies
+# ---------------------------------------------------------------------------
+# Core (Phases 0–4: scaffold, firm spine, data layer, readiness, scoring API)
+openpyxl>=3.1          # firm spine (.xlsx) parsing — the canonical firm source
+requests>=2.31         # data-layer HTTP (Census ACS, FRED, FINRA BrokerCheck)
+python-dotenv>=1.0     # local .env loading for secrets (never hardcode keys)
+
+# Data layer — optional. Modules import-guard these and degrade gracefully
+# (per §4.3) if they are absent, rather than crashing the package.
+pytrends>=4.9          # Google Trends -> Demand signal
+
+# Brief generator (Phases 5–8) — NOT YET BUILT. Listed for forward visibility.
+# anthropic>=0.40      # section 2–4 generation (claude-opus-4-8 / claude-sonnet-4-6)
+# python-docx>=1.1     # branded .docx export
+# streamlit>=1.40      # app shell + in-app delivery wrapper
+
+# Dev / test
+pytest>=8.0
