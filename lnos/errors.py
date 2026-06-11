@@ -13,6 +13,29 @@ class LnosError(Exception):
     """Base class for all Local Niche Opportunity Scorer errors."""
 
 
+class InputContractError(LnosError):
+    """Raised when a required firm-record field is missing/invalid at a point
+    that must hard-stop (§4.1). The brief generator's normal path does NOT
+    raise — it returns the 'cannot generate — missing [field], owner [owner]'
+    message and produces no document — but this exists for callers that prefer
+    to fail loudly in code.
+    """
+
+
+class NicheTaxonomyNotProvided(LnosError):
+    """Raised when the Blue Ocean niche taxonomy (the eight profiles) is needed
+    to validate a firm record but has not been supplied yet (open item #4).
+    The taxonomy is Ty's to provide; we do not invent profile names.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "Blue Ocean niche taxonomy not provided — cannot validate the niche "
+            "profile against the defined eight. Supply data/blue_ocean_niches.json "
+            "(profiles + Salesforce schema). Owner: Ty."
+        )
+
+
 class MethodologyNotProvided(LnosError):
     """Raised when scoring math is invoked before §2.1 has been supplied.
 

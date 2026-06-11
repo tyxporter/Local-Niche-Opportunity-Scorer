@@ -1,0 +1,6 @@
+{
+  "_status": "NOT PROVIDED — placeholder. Open item #4.",
+  "_instructions": "Ty supplies the eight Blue Ocean niche profiles (the validation source for §4.1's required niche_profile field) plus the Salesforce schema. Until 'profiles' is a non-empty list of exactly the defined profiles, the input contract treats the taxonomy as unavailable and fails loud rather than validating against invented names. Do NOT populate this from any export, sample, or guess — it comes from Ty's Blue Ocean client-segment framework directly.",
+  "profiles": [],
+  "salesforce_schema": {}
+}

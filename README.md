@@ -30,7 +30,7 @@ anywhere in the codebase.
 | 2 | Data layer: `census.py`, `trends.py`, `competition.py`, `fred.py` | ✅ done |
 | 3 | Readiness overlay (`readiness.py`), single-source design | ✅ plumbing done; Read math blocked on §2.1 |
 | 4 | Scoring (`scoring.py`) | ⛔ output schema only; combination math **blocked on §2.1** |
-| 5 | Firm input layer + fail-loud input contract | ⬜ not started |
+| 5 | Firm input layer + fail-loud input contract | ✅ done; niche validation blocked on taxonomy (#4) |
 | 6 | Brief generator + compliance lint (sections 2–4) | ⬜ not started |
 | 7 | Branded `.docx` export + delivery wrapper separation | ⬜ not started |
 | 8 | Streamlit shell + acceptance suite | ⬜ not started |
@@ -48,11 +48,14 @@ lnos/
   fred.py         # FRED -> current-data snapshot layer (county LAUS, HPI, permits)
   readiness.py    # Read overlay: firm-record single source; compute_read blocked
   scoring.py      # §1 output schema (5 fields, 4 buckets, 4 quadrants); math blocked
-  errors.py       # MethodologyNotProvided (the §2.1 guardrail as a raised error)
+  firm_record.py  # §4.1 firm input layer + FAIL-LOUD input contract gate
+  errors.py       # MethodologyNotProvided / InputContractError / NicheTaxonomyNotProvided
 data/
   Carson-WhollyOwned-Firm-AUM-Verified-2026-06-10.xlsx   # canonical firm source
   firm_geography.csv                                     # geography template (Ty to fill)
-tests/            # 19 tests: spine integrity, blocked math, graceful degrade
+  blue_ocean_niches.json                                 # niche taxonomy (placeholder; Ty to fill)
+  firm_records/_TEMPLATE.json                            # per-firm record template
+tests/            # 30 tests: spine integrity, blocked math, graceful degrade, input contract
 ```
 
 Data modules return **raw** observations plus freshness metadata. Normalizing

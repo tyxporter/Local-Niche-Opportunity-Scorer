@@ -1,0 +1,22 @@
+{
+  "_note": "Template only — copy to <firm_id>.json and fill. Required fields must all resolve or the brief is blocked (§4.1). disclosure_block is pasted VERBATIM from compliance and is never generated. niche_profile must be one of the eight defined Blue Ocean profiles.",
+  "firm_id": "<spine firm_id, e.g. cwmg-omaha-cia>",
+  "legal_name": "<firm legal name>",
+  "county": "<county, e.g. Douglas County>",
+  "cbsa": "<metro CBSA name or code, e.g. Omaha-Council Bluffs, NE-IA>",
+  "city": "<optional>",
+  "state": "<optional, 2-letter>",
+  "zip": "<optional>",
+  "niche_profile": "<one of the eight Blue Ocean profiles>",
+  "local_employers": ["<top employer / dominant sector>", "<...>"],
+  "compliance_structure": "Carson-only",
+  "disclosure_block": "<PASTE APPROVED DISCLOSURE BLOCK VERBATIM — owner: Compliance>",
+  "channel_inventory": ["<channel the firm can actually execute>", "<...>"],
+
+  "aum_usd": null,
+  "household_count": null,
+  "advisor_count": null,
+  "marketing_maturity_stage": null,
+  "plays_run": [],
+  "prior_brief_date": null
+}
