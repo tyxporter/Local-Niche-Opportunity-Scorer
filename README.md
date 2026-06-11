@@ -51,11 +51,11 @@ lnos/
   firm_record.py  # §4.1 firm input layer + FAIL-LOUD input contract gate
   errors.py       # MethodologyNotProvided / InputContractError / NicheTaxonomyNotProvided
 data/
-  Carson-WhollyOwned-Firm-AUM-Verified-2026-06-10.xlsx   # canonical firm source
-  firm_geography.csv                                     # geography template (Ty to fill)
+  Carson-WhollyOwned-Firm-AUM-Verified-2026-06-10.xlsx   # canonical firm + AUM source
+  Carson-Firm-Geography-Template-2026-06-11.xlsx         # canonical geography source (Ty completing)
   blue_ocean_niches.json                                 # niche taxonomy (placeholder; Ty to fill)
   firm_records/_TEMPLATE.json                            # per-firm record template
-tests/            # 30 tests: spine integrity, blocked math, graceful degrade, input contract
+tests/            # 31 tests: spine integrity, geography join, blocked math, degrade, input contract
 ```
 
 Data modules return **raw** observations plus freshness metadata. Normalizing
@@ -69,21 +69,25 @@ loader is data-driven and self-checks against the verified baseline (45 matched
 firms, $26,702,566,296.72 total); it fails loud if the file ever drifts.
 
 - **47 scoreable firms** = 45 with verified AUM + 2 AUM-pending
-  (Johnson City, Las Vegas — AUM left **null**, never inferred).
+  (Johnson City, Las Vegas — AUM left **null**, never inferred). Brief v2.3
+  locks this count (49 roster rows − 2 house accounts).
 - House accounts (Carson Group, Corporate Accounts) are **excluded** from the
   firm set.
 - AUM is descriptive input data only — never a scorer signal, never blocks
   scoring.
+- **Geography** is a separate spine input (v2.3), joined from
+  `Carson-Firm-Geography-Template-2026-06-11.xlsx`. It ships with County/CBSA
+  blank, so all 47 firms currently lack FRED-keyable geography; the unverified
+  office-name city hints are carried as `city_suggested` only, never promoted
+  to authoritative `city` until a row's County + CBSA are filled.
 
 ## Open items blocking later phases
 
 1. **§2.1 methodology spec** — unblocks Phase 4 (and Read in Phase 3).
-2. **F1 — firm count.** Brief says "49 wholly-owned offices"; the workbook
-   yields **47** once the 2 house accounts are excluded. Confirm 47, or supply
-   the 2 missing offices.
-3. **F2 — geography.** The workbook has no geography; `data/firm_geography.csv`
-   is a blank template (one row per firm) for county + CBSA (needed for FRED).
-   We do not infer geography from firm names.
+2. ~~F1 — firm count~~ **RESOLVED** by brief v2.3: 47 advisor firms (loader matches).
+3. **F2 — geography.** `Carson-Firm-Geography-Template-2026-06-11.xlsx` is wired
+   in as the canonical source but still blank for County + CBSA (the FRED keys).
+   Complete it from Salesforce and re-send; the data layer (Phase 2) keys off it.
 4. **Blue Ocean niche taxonomy** (eight profiles + Salesforce schema) — Phase 5.
 5. **Approved disclosure blocks** (Carson-only, dual Carson/Cetera) — Phase 6/7.
 6. `FRED_API_KEY`, Carson Wealth **logo**, optional **typography guide**.

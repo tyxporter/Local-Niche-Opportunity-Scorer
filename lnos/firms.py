@@ -14,15 +14,19 @@ What the workbook actually contains (verified by reading it):
         the firm set by design.
 
 => The scoreable firm spine is 45 + 2 = 47 firms. This count is derived from
-   the file, never hardcoded. (Open item F1: the brief says "49 wholly-owned
-   offices"; the file yields 47 once house accounts are excluded. Flagged to
-   Ty; this loader reports what the file contains and does not invent firms.)
+   the file, never hardcoded. (Brief v2.3 locks the portfolio at "47 wholly-
+   owned advisor firms (49 rows − 2 house accounts)" — this matches the loader
+   exactly; the earlier "49" framing counted the two excluded house accounts.)
 
-Geography (city/state/zip/county/CBSA) is NOT in the workbook. It is merged
-from data/firm_geography.csv, a template for Ty to fill (open item F2). We do
-NOT infer geography from firm names. Firms without resolved geography load
-fine but are flagged; the brief/FRED layers fail loud when geography is
-required (county + CBSA must be specific enough for FRED series).
+Geography (city/state/zip/county/CBSA) is NOT in the AUM workbook. Per brief
+v2.3 it is a SEPARATE spine input, joined from the canonical companion file
+Carson-Firm-Geography-Template-2026-06-11.xlsx (Ty completes from Salesforce).
+We do NOT infer geography from firm names. The template ships with County/CBSA
+blank, so firms load with geography unresolved and flagged; the brief/FRED
+layers fail loud when geography is required (county + CBSA must be specific
+enough for FRED series). The template's "City (suggested — VERIFY)" column is
+UNCONFIRMED and is carried as `city_suggested` only — never promoted to the
+authoritative `city` until the row's County + CBSA are filled.
 
 AUM is descriptive INPUT data only — never a scorer signal, never blocks
 scoring (a null AUM is fine).
@@ -30,7 +34,6 @@ scoring (a null AUM is fine).
 
 from __future__ import annotations
 
-import csv
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,7 +50,8 @@ except ImportError as exc:  # pragma: no cover - openpyxl is a core dep
 # --- Canonical file locations -----------------------------------------------
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SPINE_XLSX = _DATA_DIR / "Carson-WhollyOwned-Firm-AUM-Verified-2026-06-10.xlsx"
-GEOGRAPHY_CSV = _DATA_DIR / "firm_geography.csv"
+GEOGRAPHY_XLSX = _DATA_DIR / "Carson-Firm-Geography-Template-2026-06-11.xlsx"
+GEOGRAPHY_SHEET = "Firm Geography (to complete)"
 
 # Verified expectations (used by the loader's self-check, not as a source of
 # methodology). If the file ever stops matching these, we fail loud.
@@ -66,13 +70,15 @@ class Firm:
     aum_pending: bool = False          # True -> Johnson City / Las Vegas
     is_house_account: bool = False     # True -> excluded from the firm set
 
-    # Geography — from firm_geography.csv; None until Ty provides it (F2).
-    city: Optional[str] = None
+    # Geography — joined from the canonical geography template (brief v2.3);
+    # None until Ty completes it from Salesforce.
+    city: Optional[str] = None         # authoritative (only set once row complete)
     state: Optional[str] = None
     zip: Optional[str] = None
     county: Optional[str] = None
     cbsa: Optional[str] = None         # metro CBSA (name or code)
     cbsa_code: Optional[str] = None    # numeric CBSA code if provided
+    city_suggested: Optional[str] = None  # UNCONFIRMED hint from office name
 
     notes: str = ""
 
@@ -161,30 +167,63 @@ def _parse_exceptions_sheet(ws):
     return pending, house
 
 
-# --- Geography merge --------------------------------------------------------
+# --- Geography join (canonical companion file, brief v2.3) ------------------
+def _clean(v) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
+
+
 def _load_geography() -> dict[str, dict]:
-    """Read firm_geography.csv keyed by firm_id. Missing file -> empty map."""
-    if not GEOGRAPHY_CSV.exists():
+    """Read the geography template keyed by roster name. Missing file -> {}.
+
+    Reads the authoritative columns (State / ZIP / County / CBHA-Metro) plus the
+    UNCONFIRMED "City (suggested — VERIFY)" hint. Keyed by the exact roster name
+    so it joins 1:1 with the AUM spine.
+    """
+    if not GEOGRAPHY_XLSX.exists():
         return {}
+    wb = openpyxl.load_workbook(GEOGRAPHY_XLSX, data_only=True)
+    ws = wb[GEOGRAPHY_SHEET] if GEOGRAPHY_SHEET in wb.sheetnames else wb.worksheets[0]
+    rows = list(ws.iter_rows(values_only=True))
+    hdr = _find_header_row(rows, {"Firm (roster name)", "County"})
+    header = [str(c).strip() if c is not None else "" for c in rows[hdr]]
+    idx = {name: header.index(name) for name in header if name}
+    name_col = idx["Firm (roster name)"]
+    city_col = next((idx[h] for h in header if h.lower().startswith("city")), None)
     out: dict[str, dict] = {}
-    with GEOGRAPHY_CSV.open(newline="") as fh:
-        for row in csv.DictReader(fh):
-            fid = (row.get("firm_id") or "").strip()
-            if fid:
-                out[fid] = {k: (v.strip() if isinstance(v, str) else v)
-                            for k, v in row.items()}
+    for row in rows[hdr + 1:]:
+        roster = row[name_col] if name_col < len(row) else None
+        if roster is None:
+            continue
+        roster = str(roster).strip()
+        if not roster or roster.lower().startswith(("legend", "•")):
+            break
+        out[roster] = {
+            "city_suggested": _clean(row[city_col]) if city_col is not None else None,
+            "state": _clean(row[idx["State"]]) if "State" in idx else None,
+            "zip": _clean(row[idx["ZIP"]]) if "ZIP" in idx else None,
+            "county": _clean(row[idx["County"]]) if "County" in idx else None,
+            "cbsa": _clean(row[idx.get("CBSA / Metro", idx.get("CBSA"))])
+            if ("CBSA / Metro" in idx or "CBSA" in idx) else None,
+        }
     return out
 
 
 def _apply_geography(firm: Firm, geo: dict) -> None:
     if not geo:
         return
-    firm.city = geo.get("city") or None
-    firm.state = geo.get("state") or None
-    firm.zip = geo.get("zip") or None
-    firm.county = geo.get("county") or None
-    firm.cbsa = geo.get("cbsa") or None
-    firm.cbsa_code = geo.get("cbsa_code") or None
+    firm.state = geo.get("state")
+    firm.zip = geo.get("zip")
+    firm.county = geo.get("county")
+    firm.cbsa = geo.get("cbsa")
+    firm.city_suggested = geo.get("city_suggested")
+    # Promote the suggested city to authoritative ONLY when the row is actually
+    # complete (county + CBSA present). Until then we never treat the unverified
+    # office-name hint as confirmed geography.
+    if firm.has_geography:
+        firm.city = geo.get("city_suggested")
 
 
 # --- Public API -------------------------------------------------------------
@@ -220,7 +259,7 @@ def load_firms(
     if include_house:
         firms += house
     for f in firms:
-        _apply_geography(f, geo.get(f.firm_id, {}))
+        _apply_geography(f, geo.get(f.roster_name, {}))
     return firms
 
 
