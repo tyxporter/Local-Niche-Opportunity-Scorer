@@ -31,7 +31,7 @@ anywhere in the codebase.
 | 3 | Readiness overlay (`readiness.py`), single-source design | ✅ plumbing done; Read math blocked on §2.1 |
 | 4 | Scoring (`scoring.py`) | ⛔ output schema only; combination math **blocked on §2.1** |
 | 5 | Firm input layer + fail-loud input contract | ✅ done; niche validation blocked on taxonomy (#4) |
-| 6 | Brief generator + compliance lint (sections 2–4) | ⬜ not started |
+| 6 | Brief generator + compliance lint (sections 2–4) | ✅ done; §5 ranking blocked on §2.1; prose needs `ANTHROPIC_API_KEY` |
 | 7 | Branded `.docx` export + delivery wrapper separation | ⬜ not started |
 | 8 | Streamlit shell + acceptance suite | ⬜ not started |
 
@@ -49,13 +49,16 @@ lnos/
   readiness.py    # Read overlay: firm-record single source; compute_read blocked
   scoring.py      # §1 output schema (5 fields, 4 buckets, 4 quadrants); math blocked
   firm_record.py  # §4.1 firm input layer + FAIL-LOUD input contract gate
+  compliance.py   # §4.4 deny-list lint + system-prompt constraints + D2 label boundary
+  snapshot.py     # §4.2 section 1: FRED/ACS facts, narrowed never fabricated (§4.3)
+  brief.py        # §4.2 fixed 6-section assembly; §5 ranking blocked on §2.1
   errors.py       # MethodologyNotProvided / InputContractError / NicheTaxonomyNotProvided
 data/
   Carson-WhollyOwned-Firm-AUM-Verified-2026-06-10.xlsx   # canonical firm + AUM source
   Carson-Firm-Geography-Template-2026-06-11.xlsx         # canonical geography source (Ty completing)
   blue_ocean_niches.json                                 # niche taxonomy (placeholder; Ty to fill)
   firm_records/_TEMPLATE.json                            # per-firm record template
-tests/            # 31 tests: spine integrity, geography join, blocked math, degrade, input contract
+tests/            # 58 tests: spine, geography join, blocked math, degrade, input contract, compliance lint, brief assembly
 ```
 
 Data modules return **raw** observations plus freshness metadata. Normalizing

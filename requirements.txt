@@ -9,8 +9,10 @@ python-dotenv>=1.0     # local .env loading for secrets (never hardcode keys)
 # (per §4.3) if they are absent, rather than crashing the package.
 pytrends>=4.9          # Google Trends -> Demand signal
 
-# Brief generator (Phases 5–8) — NOT YET BUILT. Listed for forward visibility.
-# anthropic>=0.40      # section 2–4 generation (claude-opus-4-8 / claude-sonnet-4-6)
+# Brief generator
+anthropic>=0.40       # section 2–4 generation (claude-opus-4-8 / claude-sonnet-4-6)
+
+# Brief generator (Phases 7–8) — NOT YET BUILT. Listed for forward visibility.
 # python-docx>=1.1     # branded .docx export
 # streamlit>=1.40      # app shell + in-app delivery wrapper
 
