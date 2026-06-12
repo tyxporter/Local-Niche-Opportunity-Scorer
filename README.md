@@ -33,7 +33,7 @@ anywhere in the codebase.
 | 5 | Firm input layer + fail-loud input contract | ✅ done; niche validation blocked on taxonomy (#4) |
 | 6 | Brief generator + compliance lint (sections 2–4) | ✅ done; §5 ranking blocked on §2.1; prose needs `ANTHROPIC_API_KEY` |
 | 7 | Branded `.docx` export + delivery wrapper separation | ✅ done; logo is a flagged placeholder |
-| 8 | Streamlit shell + acceptance suite | ⬜ not started |
+| 8 | Streamlit shell + acceptance suite | ✅ app shell done (`app.py`); §2.1-blocked paths use manual ranking / preview prose |
 
 ## Layout
 
@@ -98,13 +98,25 @@ firms, $26,702,566,296.72 total); it fails loud if the file ever drifts.
 6. `FRED_API_KEY`, Carson Wealth **logo**, optional **typography guide**.
 7. **Readiness single-source** — confirm Read derives from the firm record only.
 
-## Develop
+## Run the app
 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env        # add keys locally; never commit
+streamlit run app.py        # http://localhost:8501
+```
+
+Deploy (shareable URL): push this branch and point Streamlit Community Cloud
+(share.streamlit.io) at the repo with `app.py` as the entry point; set
+`ANTHROPIC_API_KEY` / `FRED_API_KEY` in the app's Secrets. The app runs without
+keys — sections 2–4 fall back to clearly-marked PREVIEW prose and the snapshot
+narrows — so it is viewable live before every input lands.
+
+## Develop
+
+```bash
 python -m lnos.firms        # print firm spine summary
-python -m pytest -q         # run the suite
+python -m pytest -q         # run the suite (69 tests)
 ```
 
 Secrets come from env vars / Streamlit Secrets only — never hardcoded.

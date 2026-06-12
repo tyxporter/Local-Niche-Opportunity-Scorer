@@ -1,0 +1,13 @@
+# Carson Wealth (CWMG) theme — §5 brand tokens.
+[theme]
+primaryColor = "#d6b556"            # Carson Wealth Gold
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#fdfbf4" # gold tint 10%
+textColor = "#0d304a"               # navy
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

@@ -17,7 +17,7 @@ The scoring methodology (§2.1) is supplied directly by Ty and is NOT derived
 from any data export, sample, or prior file (D6).
 """
 
-__version__ = "0.7.0-dev"  # tracks phase progress; 0.<phase>.x
+__version__ = "0.8.0-dev"  # tracks phase progress; 0.<phase>.x
 
 # Submodules are imported explicitly by callers (some pull optional deps that
 # degrade gracefully). Keep this package __init__ free of heavy imports.
