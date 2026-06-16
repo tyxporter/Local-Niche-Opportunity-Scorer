@@ -43,6 +43,8 @@ SECTION_TITLES = (
 )
 
 DEFAULT_MODEL = "claude-opus-4-8"
+# Fallback order if the chosen model isn't reachable on the account.
+MODEL_FALLBACKS = ("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001")
 
 
 class LLMUnavailable(LnosError):
@@ -100,7 +102,7 @@ class ClaudeClient:
     caller fails loud instead of fabricating.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL):
+    def __init__(self, model: Optional[str] = None):
         try:
             import anthropic  # noqa: F401
         except ImportError as exc:
@@ -113,14 +115,29 @@ class ClaudeClient:
             raise LLMUnavailable("ANTHROPIC_API_KEY not set — cannot generate prose.")
         self._anthropic = __import__("anthropic")
         self._client = self._anthropic.Anthropic()
-        self.model = model
+        self.model = model or os.environ.get("LNOS_MODEL") or DEFAULT_MODEL
 
     def complete(self, *, system: str, prompt: str, temperature: float) -> str:
-        msg = self._client.messages.create(
-            model=self.model, max_tokens=1024, temperature=temperature,
-            system=system, messages=[{"role": "user", "content": prompt}],
-        )
-        return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        # Try the chosen model, then fall back across the current Claude family
+        # so a model id this account can't reach degrades to one it can, rather
+        # than failing the whole brief.
+        candidates = [self.model] + [m for m in MODEL_FALLBACKS if m != self.model]
+        last_exc = None
+        for m in candidates:
+            try:
+                msg = self._client.messages.create(
+                    model=m, max_tokens=1024, temperature=temperature,
+                    system=system, messages=[{"role": "user", "content": prompt}],
+                )
+                self.model = m  # remember what worked
+                return "".join(
+                    b.text for b in msg.content if getattr(b, "type", "") == "text")
+            except Exception as exc:  # noqa: BLE001 - try the next candidate
+                last_exc = exc
+        raise LLMUnavailable(
+            f"All candidate Claude models failed "
+            f"({type(last_exc).__name__}: {last_exc}). Check ANTHROPIC_API_KEY "
+            f"and model access.")
 
 
 # --- D2 boundary: firm-facing context ---------------------------------------
