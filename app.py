@@ -26,7 +26,8 @@ import streamlit as st
 # On Streamlit Community Cloud, secrets land in st.secrets, NOT os.environ.
 # Our data/LLM layers read os.environ, so mirror them across once at startup.
 def _load_secrets_into_env() -> None:
-    keys = ("ANTHROPIC_API_KEY", "FRED_API_KEY", "CENSUS_API_KEY", "LNOS_MODEL")
+    keys = ("ANTHROPIC_API_KEY", "FRED_API_KEY", "CENSUS_API_KEY", "LNOS_MODEL",
+            "GOOGLE_CSE_KEY", "GOOGLE_CSE_CX")
     try:
         secrets = st.secrets
     except Exception:
@@ -47,6 +48,7 @@ from lnos import snapshot as snap_mod               # noqa: E402
 from lnos import brief as brief_mod                 # noqa: E402
 from lnos import delivery as delivery_mod           # noqa: E402
 from lnos import docx_export                        # noqa: E402
+from lnos import customsearch                        # noqa: E402
 from lnos.brief import RankedPlay, Brief, BlockedBrief, LLMUnavailable  # noqa: E402
 from lnos.compliance import ComplianceBlocked       # noqa: E402
 
@@ -145,6 +147,7 @@ ss.setdefault("generated", {})  # firm_id -> dict(path, sections)
 
 have_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
 have_fred = bool(os.environ.get("FRED_API_KEY"))
+have_cse = bool(os.environ.get("GOOGLE_CSE_KEY"))
 
 
 def chip(label: str, ok: bool) -> str:
@@ -184,6 +187,7 @@ st.markdown(
     '<div class="chips">'
     + chip("Live copy (Claude)" if have_anthropic else "Preview prose — add ANTHROPIC_API_KEY", have_anthropic)
     + chip("FRED connected" if have_fred else "FRED key missing", have_fred)
+    + chip("Web context (CSE)" if have_cse else "Web context off", have_cse)
     + chip("Niche taxonomy loaded" if taxonomy.available else "Niche taxonomy pending (#4)", taxonomy.available)
     + chip("Geography resolved" if firm.has_geography else "Geography pending (F2)", firm.has_geography)
     + chip("Scoring spec pending (§2.1)", False)
@@ -287,9 +291,11 @@ if st.button("Generate .docx", type="primary"):
     else:
         try:
             with st.spinner("Generating…"):
+                web_ctx = (customsearch.employer_context_snippets(
+                    county=record.county, cbsa=record.cbsa) if have_cse else None)
                 result = brief_mod.generate_brief(
                     record, snapshot, llm=_llm(preview_mode),
-                    ranked_plays=ranked, taxonomy=taxonomy)
+                    ranked_plays=ranked, taxonomy=taxonomy, web_context=web_ctx)
             if isinstance(result, BlockedBrief):
                 st.error("Cannot generate — missing inputs:\n\n" + result.message)
             elif isinstance(result, Brief):

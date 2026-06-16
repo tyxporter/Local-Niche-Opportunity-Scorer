@@ -141,10 +141,15 @@ class ClaudeClient:
 
 
 # --- D2 boundary: firm-facing context ---------------------------------------
-def firm_facing_context(firm_record: FirmRecord, snapshot: Snapshot) -> dict:
+def firm_facing_context(
+    firm_record: FirmRecord, snapshot: Snapshot,
+    web_context: Optional[list[str]] = None,
+) -> dict:
     """Build the ONLY data dict that reaches section builders — no scorer fields.
 
-    Asserts clean of scorer internals (D2) before returning.
+    `web_context` is optional employer/sector marketing context (e.g. from
+    customsearch.py); it is never a market signal (§4.3). Asserts clean of
+    scorer internals (D2) before returning.
     """
     ctx = {
         "legal_name": firm_record.legal_name,
@@ -155,6 +160,7 @@ def firm_facing_context(firm_record: FirmRecord, snapshot: Snapshot) -> dict:
         "channel_inventory": list(firm_record.channel_inventory),
         "snapshot_facts": [m.display() for m in snapshot.available_metrics],
         "snapshot_narrowed": snapshot.narrowed,
+        "web_context": list(web_context or []),
     }
     compliance.assert_no_scorer_labels(ctx)
     return ctx
@@ -186,6 +192,8 @@ def _prose_section(
             f"- Confirmed local facts: {ctx['snapshot_facts'] or 'none confirmed'}\n"
             f"- Thin/unavailable data (narrow these, do not fill in): "
             f"{ctx['snapshot_narrowed'] or 'none'}\n"
+            f"- Web employer/sector context (marketing only, not a market event): "
+            f"{ctx.get('web_context') or 'none'}\n"
         )
         return llm.complete(
             system=SYSTEM_PROMPT_CONSTRAINTS, prompt=prompt,
@@ -265,6 +273,7 @@ def generate_brief(
     llm: Optional[LLMClient] = None,
     ranked_plays: Optional[list[RankedPlay]] = None,
     taxonomy: Optional[NicheTaxonomy] = None,
+    web_context: Optional[list[str]] = None,
 ):
     """Assemble the full 6-section brief, or fail loud.
 
@@ -285,7 +294,7 @@ def generate_brief(
         raise MethodologyNotProvided(
             "Where-to-Start ranking — provide a scorer-derived ranked play order")
 
-    ctx = firm_facing_context(firm_record, snapshot)
+    ctx = firm_facing_context(firm_record, snapshot, web_context=web_context)
     sections = [
         build_section1_snapshot(snapshot),
         build_section2_signal_read(ctx, llm),
