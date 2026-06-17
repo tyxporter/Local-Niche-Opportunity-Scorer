@@ -1,15 +1,18 @@
-"""City/State -> County + CBSA + FIPS resolution (keyless).
+"""City/State -> County + CBSA + FIPS resolution (keyless, cloud-friendly).
 
 Resolves the geography keys the data layer needs (FRED LAUS / ACS key off
 state+county FIPS) from a firm's city/state, in two keyless steps:
 
-  1. city/state -> lat/lon            (OpenStreetMap Nominatim)
+  1. city/state -> lat/lon  (Open-Meteo geocoding; Nominatim fallback)
   2. lat/lon    -> county FIPS + CBSA  (US Census Geocoder, coordinates layer)
+
+Open-Meteo is the primary because it is built for programmatic use and works
+from cloud hosts (Streamlit Cloud) where Nominatim often rate-limits/blocks.
 
 This is RESOLUTION from supplied city/state (Ty's data), not inference from a
 firm name (§1/v2.3 forbids the latter). Cached aggressively (geography is
-stable, so ~47 lookups ever) and fully graceful: any failure returns an
-unavailable result, never a guessed county.
+stable) and fully graceful: any failure returns an unavailable result, never a
+guessed county.
 """
 
 from __future__ import annotations
@@ -26,9 +29,26 @@ except ImportError:  # pragma: no cover
 
 SOURCE = "geocode"
 GEO_TTL_DAYS = 365
+_OPENMETEO = "https://geocoding-api.open-meteo.com/v1/search"
 _NOMINATIM = "https://nominatim.openstreetmap.org/search"
 _CENSUS_COORDS = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
 _UA = "LocalNicheOpportunityScorer/0.8 (Carson Wealth internal tool)"
+
+_STATES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+    "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+    "DC": "District of Columbia", "FL": "Florida", "GA": "Georgia", "HI": "Hawaii",
+    "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+    "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island",
+    "SC": "South Carolina", "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas",
+    "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington",
+    "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+}
 
 
 @dataclass
@@ -46,6 +66,15 @@ class GeoResolution:
     @property
     def has_fips(self) -> bool:
         return bool(self.state_fips and self.county_fips)
+
+
+def _state_full(state: str) -> Optional[str]:
+    s = (state or "").strip()
+    if not s:
+        return None
+    if len(s) == 2 and s.upper() in _STATES:
+        return _STATES[s.upper()]
+    return s  # already a full name
 
 
 def resolve(city: str, state: str, *, max_age_days: Optional[int] = GEO_TTL_DAYS,
@@ -76,13 +105,38 @@ def resolve(city: str, state: str, *, max_age_days: Optional[int] = GEO_TTL_DAYS
 
 
 def _latlon(city: str, state: str, timeout: float):
+    return (_latlon_openmeteo(city, state, timeout)
+            or _latlon_nominatim(city, state, timeout))
+
+
+def _latlon_openmeteo(city: str, state: str, timeout: float):
+    full = _state_full(state)
+    try:
+        r = requests.get(_OPENMETEO, timeout=timeout, params={
+            "name": city.strip(), "count": 10, "country": "US",
+            "language": "en", "format": "json"})
+        r.raise_for_status()
+        results = r.json().get("results") or []
+    except Exception:  # noqa: BLE001
+        return None
+    # Require a state match so we don't grab a same-named city in another state.
+    for x in results:
+        if full and (x.get("admin1") or "").strip().lower() == full.lower():
+            try:
+                return float(x["latitude"]), float(x["longitude"])
+            except (KeyError, ValueError, TypeError):
+                return None
+    return None
+
+
+def _latlon_nominatim(city: str, state: str, timeout: float):
     try:
         r = requests.get(_NOMINATIM, headers={"User-Agent": _UA}, timeout=timeout,
                          params={"city": city.strip(), "state": state.strip(),
                                  "country": "USA", "format": "json", "limit": 1})
         r.raise_for_status()
         hits = r.json()
-    except Exception:  # noqa: BLE001 - degrade gracefully
+    except Exception:  # noqa: BLE001
         return None
     if not hits:
         return None
@@ -129,4 +183,4 @@ def _from_payload(p: dict) -> GeoResolution:
         state_fips=p.get("state_fips"), county_fips=p.get("county_fips"),
         county_name=p.get("county_name"), cbsa=p.get("cbsa"),
         cbsa_code=p.get("cbsa_code"), lat=p.get("lat"), lon=p.get("lon"),
-        note="resolved via Nominatim + Census Geocoder.")
+        note="resolved via Open-Meteo + Census Geocoder.")
