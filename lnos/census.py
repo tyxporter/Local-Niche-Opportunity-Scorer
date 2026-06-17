@@ -68,6 +68,14 @@ def fetch_median_household_income(
     try:
         resp = requests.get(url, params=q, timeout=timeout)
         resp.raise_for_status()
+        # Census returns an HTML page (HTTP 200) when the key is missing/invalid.
+        if "json" not in resp.headers.get("content-type", "").lower():
+            reason = ("CENSUS_API_KEY required (the ACS API no longer serves "
+                      "keyless requests)" if "Missing Key" in resp.text
+                      else "non-JSON response")
+            return SignalResult.unavailable(
+                SOURCE, f"ACS {reason} for state {state_fips}/county {county_fips} "
+                        f"(year {year}).", as_of=str(year), lagged=True)
         rows = resp.json()
     except Exception as exc:  # noqa: BLE001 - degrade gracefully (§4.3)
         return SignalResult.unavailable(

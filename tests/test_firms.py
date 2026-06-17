@@ -35,20 +35,22 @@ def test_house_accounts_excluded_by_default_present_when_requested():
 
 def test_geography_keys_unresolved_until_template_completed():
     fs = firms.load_firms()
-    # Template ships with County/CBSA blank -> no firm has FRED-keyable geography,
-    # and no authoritative city is invented from the unverified office-name hint.
+    # County/CBSA come from the template (still blank) -> no firm has
+    # FRED-keyable geography yet. City/state may be populated from the city/state
+    # file; county+CBSA (the FRED keys) are what gate has_geography.
     assert firms.firms_missing_geography(fs) == fs
-    assert all(f.county is None and f.cbsa is None and f.city is None for f in fs)
+    assert all(f.county is None and f.cbsa is None for f in fs)
 
 
-def test_unconfirmed_city_carried_as_suggestion_only():
+def test_city_state_merged_with_confidence():
     fs = {f.roster_name: f for f in firms.load_firms()}
     omaha = fs["CWMG-Omaha-CIA"]
-    # Office-named firm: suggestion present, but NOT promoted to authoritative.
-    assert omaha.city_suggested == "Omaha"
-    assert omaha.city is None and not omaha.has_geography
-    # Brand-name firm: no suggestion at all (needs full manual entry).
-    assert fs["NWCM-CIA"].city_suggested is None
+    assert omaha.city == "Omaha" and omaha.state == "NE"
+    assert "Confirmed" in (omaha.geo_confidence or "")
+    assert not omaha.has_geography  # county/CBSA still pending the template
+    # Brand-name firm with no city/state in the list is flagged, not invented.
+    applied = fs["Applied Financial Planning Inc-CIA"]
+    assert applied.city is None and applied.geo_confidence == "NEEDS SALESFORCE"
 
 
 def test_summary_shape():

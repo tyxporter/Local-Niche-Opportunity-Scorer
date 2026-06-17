@@ -1,18 +1,20 @@
 """Streamlit shell (§6, Phase 8) — UI + delivery wrapper.
 
 Internal app for the Local Niche Opportunity Scorer / Local Marketing
-Opportunity Brief. Pick a firm, complete the firm record, see the fail-loud
-input contract live, preview the snapshot, generate the branded .docx, and read
-the app-only delivery wrapper beside it.
+Opportunity Brief. Pick a firm → geography, AUM, market snapshot and web
+context auto-resolve → fill the two inputs only Ty/compliance can supply
+(Blue Ocean niche + approved disclosure) → generate the branded .docx.
 
 Guardrails honored in the UI:
-  * The firm-facing .docx and the internal delivery wrapper are rendered by
-    SEPARATE functions that share no state (§4.5).
-  * Sections 2–4 prose runs through the compliance lint (§4.4). With no
-    ANTHROPIC_API_KEY, the app uses a clearly-watermarked PREVIEW prose mode for
-    layout only — never represented as client-ready.
-  * The scorer-derived Where-to-Start ranking is §2.1 (blocked); until then Ty
-    hand-orders the plays in the UI.
+  * Firm-facing .docx and the internal delivery wrapper are rendered by SEPARATE
+    functions that share no state (§4.5).
+  * Sections 2–4 prose runs through the compliance lint (§4.4); with no
+    ANTHROPIC_API_KEY the app uses clearly-watermarked PREVIEW prose (layout
+    only, not client-ready).
+  * Scorer-derived Where-to-Start ranking is §2.1 (blocked); Ty hand-orders the
+    plays (sensible defaults provided).
+  * Geography is RESOLVED from supplied city/state via the Census geocoder —
+    never inferred from a firm name.
 """
 
 from __future__ import annotations
@@ -23,8 +25,8 @@ import streamlit as st
 
 
 # --- Secrets bridge ---------------------------------------------------------
-# On Streamlit Community Cloud, secrets land in st.secrets, NOT os.environ.
-# Our data/LLM layers read os.environ, so mirror them across once at startup.
+# Streamlit Cloud puts secrets in st.secrets, NOT os.environ. Our data/LLM
+# layers read os.environ, so mirror them once at startup.
 def _load_secrets_into_env() -> None:
     keys = ("ANTHROPIC_API_KEY", "FRED_API_KEY", "CENSUS_API_KEY", "LNOS_MODEL",
             "GOOGLE_CSE_KEY", "GOOGLE_CSE_CX")
@@ -48,64 +50,64 @@ from lnos import snapshot as snap_mod               # noqa: E402
 from lnos import brief as brief_mod                 # noqa: E402
 from lnos import delivery as delivery_mod           # noqa: E402
 from lnos import docx_export                        # noqa: E402
-from lnos import customsearch                        # noqa: E402
+from lnos import customsearch                       # noqa: E402
+from lnos import geocode as geocode_mod             # noqa: E402
 from lnos.brief import RankedPlay, Brief, BlockedBrief, LLMUnavailable  # noqa: E402
 from lnos.compliance import ComplianceBlocked       # noqa: E402
 
 st.set_page_config(page_title="Local Niche Opportunity Scorer",
-                   page_icon="◆", layout="wide",
-                   initial_sidebar_state="expanded")
+                   page_icon="◆", layout="wide", initial_sidebar_state="expanded")
+
+DEFAULT_CHANNELS = "email, seminars, referrals, LinkedIn"
+DEFAULT_PLAYS = [("Niche seminar series",
+                  "fits the firm's strongest channel and core local audience"),
+                 ("Employer-sector email nurture",
+                  "low lift across the firm's existing lists")]
 
 # --- brand styling ----------------------------------------------------------
 st.markdown(f"""
 <style>
-  #MainMenu, footer, header[data-testid="stHeader"] {{ visibility:hidden; }}
+  #MainMenu, footer {{ visibility:hidden; }}
+  /* NOTE: never hide header[data-testid="stHeader"] — it holds the sidebar
+     collapse/expand control. Keep it visible so the sidebar can reopen. */
   .stApp {{ background:{brand.GOLD_TINT_10};
             font-family:"Helvetica Neue LT Pro","Helvetica Neue",Helvetica,Arial,sans-serif; }}
-  .block-container {{ padding-top:1.2rem; max-width:1180px; }}
+  .block-container {{ padding-top:1rem; max-width:1180px; }}
   h1,h2,h3,h4 {{ color:{brand.NAVY}; letter-spacing:-0.01em; }}
-
-  /* Branded header band with a 30/60 chevron accent (§5 geometry) */
   .lnos-band {{ position:relative; overflow:hidden; background:{brand.NAVY};
-    color:#fff; padding:1.3rem 1.6rem; border-radius:4px; margin-bottom:1rem; }}
+    color:#fff; padding:1.2rem 1.5rem; border-radius:4px; margin-bottom:.8rem; }}
   .lnos-band:after {{ content:""; position:absolute; top:0; right:-40px; width:160px;
     height:100%; background:{brand.GOLD}; transform:skewX(-30deg); opacity:.92; }}
   .lnos-band:before {{ content:""; position:absolute; top:0; right:60px; width:80px;
     height:100%; background:{brand.LIGHT_GOLD}; transform:skewX(-30deg); opacity:.55; }}
-  .lnos-logo {{ font-weight:800; font-size:.82rem; letter-spacing:.22em;
-    color:{brand.LIGHT_GOLD}; }}
+  .lnos-logo {{ font-weight:800; font-size:.8rem; letter-spacing:.22em; color:{brand.LIGHT_GOLD}; }}
   .lnos-logo span {{ color:#fff; }}
-  .lnos-title {{ font-size:1.7rem; font-weight:800; margin:.15rem 0 0; }}
-  .lnos-sub {{ color:{brand.GRAY_LIGHT}; font-size:.92rem; }}
-
-  /* status chips */
-  .chips {{ display:flex; flex-wrap:wrap; gap:.4rem; margin:.2rem 0 1rem; }}
+  .lnos-title {{ font-size:1.6rem; font-weight:800; margin:.1rem 0 0; }}
+  .lnos-sub {{ color:{brand.GRAY_LIGHT}; font-size:.9rem; }}
+  .chips {{ display:flex; flex-wrap:wrap; gap:.4rem; margin:.1rem 0 .8rem; }}
   .chip {{ font-size:.74rem; font-weight:600; padding:.22rem .6rem; border-radius:999px;
     border:1px solid transparent; }}
   .chip-ok {{ background:{brand.GOLD_TINT_50}; color:#5b4a16; border-color:{brand.GOLD}; }}
   .chip-wait {{ background:#fff; color:{brand.GRAY_DARK}; border-color:{brand.GRAY_MID}; }}
-
-  h2 {{ border-bottom:2px solid {brand.GOLD}; padding-bottom:.25rem; margin-top:1.4rem; }}
+  h2 {{ border-bottom:2px solid {brand.GOLD}; padding-bottom:.25rem; margin-top:1.3rem; }}
   div.stButton > button {{ background:{brand.NAVY}; color:#fff; border:0; border-radius:3px;
     font-weight:700; padding:.45rem 1.1rem; }}
   div.stButton > button:hover {{ background:{brand.GOLD}; color:{brand.NAVY}; }}
   .sidebar-card {{ background:{brand.NAVY}; color:#fff; padding:.8rem .9rem; border-radius:4px; }}
   .sidebar-card .k {{ color:{brand.LIGHT_GOLD}; font-size:.78rem; }}
-  .internal {{ background:{brand.GOLD_TINT_25}; border:1px dashed {brand.GOLD};
-    padding:.2rem .2rem .2rem .9rem; border-radius:4px; }}
 </style>
 """, unsafe_allow_html=True)
 
 
 # --- preview LLM (no key) ---------------------------------------------------
 class PreviewLLM:
-    """Layout-only placeholder prose when no ANTHROPIC_API_KEY is set.
-    Output is compliance-clean and clearly marked — NOT client-ready."""
+    """Layout-only placeholder prose when no ANTHROPIC_API_KEY. Compliance-clean,
+    clearly marked — NOT client-ready."""
 
     _TEXT = {
         "signal": ("[PREVIEW] Local employers and sectors anchor this market, and "
                    "the firm's niche audience is reachable through its existing "
-                   "channels. This is outreach context only."),
+                   "channels. Outreach context only."),
         "niche": ("[PREVIEW] The firm's niche maps onto the dominant local "
                   "audience; where it does not intersect the strongest signal, "
                   "lead with the audience it does."),
@@ -128,22 +130,39 @@ def _llm(preview: bool):
     return PreviewLLM()
 
 
-# --- data -------------------------------------------------------------------
-@st.cache_data
+# --- cached data ------------------------------------------------------------
+@st.cache_data(show_spinner=False)
 def load_spine():
     return firms_mod.load_firms()
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_taxonomy():
     return fr.load_niche_taxonomy()
+
+
+@st.cache_data(show_spinner=False)
+def resolve_geo(city, state):
+    if not (city and state):
+        return None
+    try:
+        r = geocode_mod.resolve(city, state)
+    except Exception:
+        return None
+    return r if r.available else None
+
+
+@st.cache_data(show_spinner=False)
+def get_snapshot(firm_id, state_fips, county_fips):
+    return snap_mod.build_snapshot(firm_id, state_fips=state_fips,
+                                   county_fips=county_fips)
 
 
 spine = load_spine()
 taxonomy = load_taxonomy()
 by_name = {f.roster_name: f for f in spine}
 ss = st.session_state
-ss.setdefault("generated", {})  # firm_id -> dict(path, sections)
+ss.setdefault("generated", {})
 
 have_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
 have_fred = bool(os.environ.get("FRED_API_KEY"))
@@ -168,50 +187,73 @@ with st.sidebar:
     st.subheader("Firm")
     pick = st.selectbox("Select a firm (47 in spine)", list(by_name.keys()))
     firm = by_name[pick]
-    geo = "resolved" if firm.has_geography else "pending (F2)"
-    sugg = f" · suggested {firm.city_suggested}" if firm.city_suggested else ""
+
+geo_res = resolve_geo(firm.city, firm.state)
+county_auto = geo_res.county_name if geo_res else None
+cbsa_auto = geo_res.cbsa if geo_res else None
+
+with st.sidebar:
     aum = "—" if firm.aum_usd is None else f"${firm.aum_usd_m:,.1f}M"
+    loc = f"{firm.city}, {firm.state}" if firm.city and firm.state else "—"
+    resolved = f"{county_auto} · {cbsa_auto}" if (geo_res and geo_res.has_fips) else "pending"
     st.markdown(
         f"<div class='sidebar-card'><b>{firm.roster_name}</b><br>"
         f"<span class='k'>firm_id</span> {firm.firm_id}<br>"
         f"<span class='k'>AUM</span> {aum}{' (pending)' if firm.aum_pending else ''}<br>"
-        f"<span class='k'>geography</span> {geo}{sugg}</div>", unsafe_allow_html=True)
+        f"<span class='k'>location</span> {loc}<br>"
+        f"<span class='k'>resolved</span> {resolved}</div>", unsafe_allow_html=True)
+    if firm.geo_confidence and "Confirmed" not in firm.geo_confidence:
+        st.caption(f"⚠ Location confidence: {firm.geo_confidence} — verify.")
     existing = fr.record_path(firm.firm_id).exists()
     st.caption("✓ Saved record found." if existing else "No saved record yet.")
     st.divider()
     st.caption("Logo placeholder — supply the Carson Wealth lockup to brand the "
                ".docx header.")
 
-# --- live/pending status ----------------------------------------------------
+# --- status chips -----------------------------------------------------------
 st.markdown(
     '<div class="chips">'
     + chip("Live copy (Claude)" if have_anthropic else "Preview prose — add ANTHROPIC_API_KEY", have_anthropic)
     + chip("FRED connected" if have_fred else "FRED key missing", have_fred)
     + chip("Web context (CSE)" if have_cse else "Web context off", have_cse)
     + chip("Niche taxonomy loaded" if taxonomy.available else "Niche taxonomy pending (#4)", taxonomy.available)
-    + chip("Geography resolved" if firm.has_geography else "Geography pending (F2)", firm.has_geography)
+    + chip("Geography resolved" if (geo_res and geo_res.has_fips) else "Geography pending", bool(geo_res and geo_res.has_fips))
     + chip("Scoring spec pending (§2.1)", False)
     + '</div>', unsafe_allow_html=True)
+
+with st.expander("How this works", expanded=not existing):
+    st.markdown(
+        "1. **Pick a firm** (left). Geography, AUM, the market snapshot and web "
+        "context auto-fill where keys allow.\n"
+        "2. **Provide the two inputs only you can**: the **Blue Ocean niche** and "
+        "the **approved disclosure block** (compliance rule: disclosure is never "
+        "auto-written).\n"
+        "3. **Generate .docx** and download. Sections 2–4 are written by Claude "
+        "and run through the compliance lint; the snapshot shows live FRED/ACS "
+        "numbers once geography is resolved.\n\n"
+        "Still pending org-wide: the **§2.1 scoring spec** (automatic ranking) — "
+        "until then you hand-order the plays.")
 
 # --- firm record form -------------------------------------------------------
 st.header("1 · Firm record")
 prefill = fr.load_firm_record(firm.firm_id) if existing else fr.FirmRecord(
     firm_id=firm.firm_id, legal_name=firm.roster_name.replace("-CIA", ""),
-    county=firm.county, cbsa=firm.cbsa, aum_usd=firm.aum_usd)
+    county=county_auto, cbsa=cbsa_auto, aum_usd=firm.aum_usd,
+    channel_inventory=fr.FirmRecord._as_list(DEFAULT_CHANNELS))
 
 with st.container(border=True):
     c1, c2 = st.columns(2)
     with c1:
         legal_name = st.text_input("Firm legal name *", prefill.legal_name or "")
-        county = st.text_input("County *", prefill.county or (firm.county or ""))
-        cbsa = st.text_input("Metro / CBSA *", prefill.cbsa or (firm.cbsa or ""))
+        county = st.text_input("County *", prefill.county or county_auto or "")
+        cbsa = st.text_input("Metro / CBSA *", prefill.cbsa or cbsa_auto or "")
         niche_opts = list(taxonomy.profiles) if taxonomy.available else []
         if niche_opts:
             niche = st.selectbox("Blue Ocean niche profile *", niche_opts,
                                  index=niche_opts.index(prefill.niche_profile)
                                  if prefill.niche_profile in niche_opts else 0)
         else:
-            niche = st.text_input("Blue Ocean niche profile * (taxonomy pending)",
+            niche = st.text_input("Blue Ocean niche profile * (taxonomy pending — type one)",
                                   prefill.niche_profile or "")
     with c2:
         compliance_structure = st.selectbox(
@@ -219,13 +261,27 @@ with st.container(border=True):
             index=0 if (prefill.compliance_structure or "Carson").startswith("Carson") else 1)
         local_employers = st.text_area(
             "Top local employers / sectors * (comma-separated)",
-            ", ".join(prefill.local_employers), height=70)
+            ", ".join(prefill.local_employers), height=70,
+            help="Click ‘Find local employers’ below to pull suggestions from the web.")
         channel_inventory = st.text_area(
             "Channel inventory * (comma-separated)",
-            ", ".join(prefill.channel_inventory), height=70)
+            ", ".join(prefill.channel_inventory) or DEFAULT_CHANNELS, height=70)
     disclosure_block = st.text_area(
         "Approved disclosure block * (verbatim — never generated)",
-        prefill.disclosure_block or "", height=90)
+        prefill.disclosure_block or "", height=90,
+        help="Paste the firm's compliance-approved disclosure exactly. Required.")
+
+    if have_cse and st.button("🔎 Find local employers (web)"):
+        with st.spinner("Searching…"):
+            snips = customsearch.employer_context_snippets(
+                county=county or county_auto, cbsa=cbsa or cbsa_auto)
+        if snips:
+            st.info("Web findings — copy the relevant employers/sectors into the "
+                    "field above:")
+            for s in snips:
+                st.markdown(f"- {s}")
+        else:
+            st.caption("No web findings (check geography / CSE quota).")
 
 record = fr.FirmRecord(
     firm_id=firm.firm_id, legal_name=legal_name or None, county=county or None,
@@ -242,50 +298,53 @@ with left:
     if validation.ok:
         st.success("Input contract satisfied — ready to generate.")
     else:
-        st.error("Cannot generate yet — resolve these (fail-loud, §4.1):")
-        for fld, reason, owner in validation.problems:
-            st.markdown(f"- **{reason} {fld}** — owner *{owner}*")
+        st.warning("To generate, still need: "
+                   + ", ".join(f"**{fld}**" for fld, _, _ in validation.problems))
 with right:
     if st.button("💾 Save record"):
         fr.save_firm_record(record)
         st.toast("Saved.")
 
-# --- snapshot preview -------------------------------------------------------
+# --- snapshot ---------------------------------------------------------------
 st.header("2 · Local market snapshot")
-st.caption("Section 1 of the brief — FRED/ACS facts, presented cleanly, no "
-           "interpretation. Thin/unavailable sources are narrowed, never faked (§4.3).")
+st.caption("Section 1 of the brief — FRED/ACS facts, no interpretation. "
+           "Thin/unavailable sources are narrowed, never faked (§4.3).")
+sfips = geo_res.state_fips if geo_res else None
+cfips = geo_res.county_fips if geo_res else None
 with st.container(border=True):
-    snapshot = snap_mod.build_snapshot(firm.firm_id)
+    snapshot = get_snapshot(firm.firm_id, sfips, cfips)
     for m in snapshot.metrics:
-        icon = "🟢" if m.available else "⚪"
-        st.markdown(f"{icon} {m.display()}")
-    if snapshot.is_thin:
-        st.caption("Resolves once geography→FIPS lands (F2) — county/CBSA in the "
-                   "geography template — and FRED is connected.")
+        st.markdown(f"{'🟢' if m.available else '⚪'} {m.display()}")
+    if snapshot.is_thin and not (geo_res and geo_res.has_fips):
+        st.caption("Resolves once a firm's city/state is on file (geocoded to "
+                   "county FIPS) and FRED is connected.")
+    elif snapshot.is_thin and not have_fred:
+        st.caption("Geography resolved — add FRED_API_KEY to populate the numbers.")
 
-# --- where to start (manual ranking until §2.1) -----------------------------
+# --- where to start ---------------------------------------------------------
 st.header("3 · Where to start (rank the plays)")
-st.caption("Scorer-derived ranking is blocked on §2.1 — hand-order the plays for "
-           "now. Ranking only; no numbers reach the firm (D1).")
+st.caption("Scorer-derived ranking is blocked on §2.1 — defaults provided; "
+           "edit/reorder. Ranking only, no numbers reach the firm (D1).")
 with st.container(border=True):
     n = st.number_input("How many plays?", 1, 3, 2)
     ranked = []
     for i in range(int(n)):
         a, b = st.columns([1, 2])
-        name = a.text_input(f"Play {i+1} name", key=f"pn{i}")
-        why = b.text_input(f"Play {i+1} reasoning", key=f"pr{i}")
+        dname, dwhy = (DEFAULT_PLAYS[i] if i < len(DEFAULT_PLAYS) else ("", ""))
+        name = a.text_input(f"Play {i+1} name", value=dname, key=f"pn{i}")
+        why = b.text_input(f"Play {i+1} reasoning", value=dwhy, key=f"pr{i}")
         if name:
             ranked.append(RankedPlay(name, why))
 
 # --- generate ---------------------------------------------------------------
 st.header("4 · Generate the brief")
-default_preview = not have_anthropic
 preview_mode = st.checkbox(
-    "Preview prose (placeholder, layout only)", value=default_preview,
+    "Preview prose (placeholder, layout only)", value=not have_anthropic,
     help="Unchecked uses Claude for live sections 2–4 (needs ANTHROPIC_API_KEY).")
 if st.button("Generate .docx", type="primary"):
     if not validation.ok:
-        st.error("Resolve the missing required fields above first.")
+        st.error("Fill the remaining required fields above first: "
+                 + ", ".join(fld for fld, _, _ in validation.problems))
     elif not ranked:
         st.error("Add at least one ranked play in section 3.")
     else:
@@ -326,7 +385,6 @@ if gen:
 st.header("5 · Delivery wrapper")
 st.caption("Internal only — never inside the .docx (§4.5).")
 with st.container(border=True):
-    st.markdown('<div class="internal">', unsafe_allow_html=True)
     ty_read = st.text_area("Your prioritization read (which play to lead with & why)", "")
     wrapper = delivery_mod.build_delivery_wrapper(
         record, prioritization_read=ty_read or None, validation=validation,
@@ -339,4 +397,3 @@ with st.container(border=True):
         for f in wrapper.missing_input_flags:
             st.markdown(f"- {f}")
     st.markdown(f"**Suggested intro** — {wrapper.suggested_intro}")
-    st.markdown('</div>', unsafe_allow_html=True)

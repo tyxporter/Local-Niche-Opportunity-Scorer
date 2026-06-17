@@ -52,6 +52,8 @@ _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SPINE_XLSX = _DATA_DIR / "Carson-WhollyOwned-Firm-AUM-Verified-2026-06-10.xlsx"
 GEOGRAPHY_XLSX = _DATA_DIR / "Carson-Firm-Geography-Template-2026-06-11.xlsx"
 GEOGRAPHY_SHEET = "Firm Geography (to complete)"
+CITY_STATE_XLSX = _DATA_DIR / "Carson-Firm-City-State-2026-06-11.xlsx"
+CITY_STATE_SHEET = "Firm City-State"
 
 # Verified expectations (used by the loader's self-check, not as a source of
 # methodology). If the file ever stops matching these, we fail loud.
@@ -79,6 +81,7 @@ class Firm:
     cbsa: Optional[str] = None         # metro CBSA (name or code)
     cbsa_code: Optional[str] = None    # numeric CBSA code if provided
     city_suggested: Optional[str] = None  # UNCONFIRMED hint from office name
+    geo_confidence: Optional[str] = None  # from city/state file: Confirmed / Office-corrected / Inferred / NEEDS SALESFORCE
 
     notes: str = ""
 
@@ -211,6 +214,38 @@ def _load_geography() -> dict[str, dict]:
     return out
 
 
+def _load_city_state() -> dict[str, dict]:
+    """Read the city/state file keyed by roster name. Missing file -> {}.
+
+    Provides city + state + a confidence flag (Confirmed / Office-corrected /
+    Inferred / NEEDS SALESFORCE). City/state are the inputs the geocoder
+    resolves to county+CBSA+FIPS; confidence is surfaced so unverified rows are
+    not silently trusted.
+    """
+    if not CITY_STATE_XLSX.exists():
+        return {}
+    wb = openpyxl.load_workbook(CITY_STATE_XLSX, data_only=True)
+    ws = wb[CITY_STATE_SHEET] if CITY_STATE_SHEET in wb.sheetnames else wb.worksheets[0]
+    rows = list(ws.iter_rows(values_only=True))
+    hdr = _find_header_row(rows, {"Firm (roster name)", "City", "State"})
+    header = [str(c).strip() if c is not None else "" for c in rows[hdr]]
+    idx = {name: header.index(name) for name in header if name}
+    out: dict[str, dict] = {}
+    for row in rows[hdr + 1:]:
+        roster = row[idx["Firm (roster name)"]] if idx["Firm (roster name)"] < len(row) else None
+        if roster is None:
+            continue
+        roster = str(roster).strip()
+        if not roster:
+            continue
+        out[roster] = {
+            "city": _clean(row[idx["City"]]) if "City" in idx else None,
+            "state": _clean(row[idx["State"]]) if "State" in idx else None,
+            "confidence": _clean(row[idx["Confidence"]]) if "Confidence" in idx else None,
+        }
+    return out
+
+
 def _apply_geography(firm: Firm, geo: dict) -> None:
     if not geo:
         return
@@ -253,6 +288,7 @@ def load_firms(
         _verify_spine(matched)
 
     geo = _load_geography()
+    city_state = _load_city_state()
     firms: list[Firm] = list(matched)
     if include_pending:
         firms += pending
@@ -260,6 +296,13 @@ def load_firms(
         firms += house
     for f in firms:
         _apply_geography(f, geo.get(f.roster_name, {}))
+        cs = city_state.get(f.roster_name, {})
+        if cs:
+            # City/state file is the working location source until County/CBSA
+            # are filled in the template; prefer it for city/state.
+            f.city = cs.get("city") or f.city
+            f.state = cs.get("state") or f.state
+            f.geo_confidence = cs.get("confidence")
     return firms
 
 
