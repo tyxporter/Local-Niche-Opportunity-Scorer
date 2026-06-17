@@ -84,17 +84,19 @@ def fetch_results(
 
 
 def employer_context_snippets(
-    *, county: Optional[str], cbsa: Optional[str], num: int = 5
+    *, county: Optional[str] = None, cbsa: Optional[str] = None,
+    place: Optional[str] = None, num: int = 5
 ) -> list[str]:
     """Convenience: plain snippet strings about local employers/sectors.
 
+    `place` (e.g. "Omaha, NE") overrides; otherwise uses cbsa or county.
     Returns [] when geography is missing or the source is unavailable — callers
     treat empty as "no web context" and narrow accordingly (§4.3).
     """
-    place = cbsa or county
-    if not place:
+    where = place or cbsa or county
+    if not where:
         return []
-    res = fetch_results(f"largest employers and major industries in {place}", num=num)
+    res = fetch_results(f"largest employers and major industries in {where}", num=num)
     if not res.available:
         return []
     return [f"{i['snippet']} ({i['source']})" for i in res.value if i.get("snippet")]

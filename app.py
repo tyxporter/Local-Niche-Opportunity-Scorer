@@ -160,17 +160,22 @@ def get_snapshot(firm_id, state_fips, county_fips, state_abbr):
 
 
 @st.cache_data(show_spinner=False)
-def auto_employers(county, cbsa):
+def auto_employers(county, cbsa, city, state):
     """Best-effort auto-fill of local employers/sectors from the web (CSE),
     distilled to a short comma list by Claude when available. Empty on any
     miss — never fabricated, never blocks."""
     if not os.environ.get("GOOGLE_CSE_KEY"):
         return ""
-    snips = customsearch.employer_context_snippets(county=county, cbsa=cbsa)
+    place = cbsa or county or (f"{city}, {state}" if city and state else None)
+    if not place:
+        return ""
+    snips = customsearch.employer_context_snippets(place=place)
     if not snips:
         return ""
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        return ""
+        # No distiller available — surface the raw web findings rather than
+        # leaving it blank; user can trim.
+        return "; ".join(snips[:3])
     try:
         llm = brief_mod.ClaudeClient()
         txt = llm.complete(
@@ -181,7 +186,7 @@ def auto_employers(county, cbsa):
         items = [s.strip() for s in txt.replace("\n", ",").split(",") if s.strip()]
         return ", ".join(items[:6])
     except Exception:
-        return ""
+        return "; ".join(snips[:3])
 
 
 @st.cache_data(show_spinner=False)
@@ -291,7 +296,7 @@ def _metric(key):
 
 
 mhi_val, unemp_val, hpi_val = _metric("income"), _metric("unemployment"), _metric("home price")
-emp_default = auto_employers(county_auto, cbsa_auto)
+emp_default = auto_employers(county_auto, cbsa_auto, firm.city, firm.state)
 ai_niche = (auto_niche(firm.firm_id, tuple(taxonomy.profiles), county_auto, cbsa_auto,
                        emp_default, mhi_val, unemp_val, hpi_val, firm.aum_usd)
             if taxonomy.available else None)
