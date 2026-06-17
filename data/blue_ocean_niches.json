@@ -1,6 +1,12 @@
 {
   "_status": "NOT PROVIDED — placeholder. Open item #4.",
-  "_instructions": "Ty supplies the eight Blue Ocean niche profiles (the validation source for §4.1's required niche_profile field) plus the Salesforce schema. Until 'profiles' is a non-empty list of exactly the defined profiles, the input contract treats the taxonomy as unavailable and fails loud rather than validating against invented names. Do NOT populate this from any export, sample, or guess — it comes from Ty's Blue Ocean client-segment framework directly.",
+  "_instructions": "Add the eight Blue Ocean profiles. Either a plain list of names, or (recommended) objects with a one-line description each — descriptions make the app's auto-selection of a firm's niche much more accurate. The app classifies each firm into exactly one of these from its data (geography, income, employers, AUM) and shows its reasoning; you can override. Provide from Ty's Blue Ocean framework — never guessed.",
+  "_format_example": {
+    "profiles": [
+      {"name": "Example Profile A", "description": "one line on who this segment is"},
+      {"name": "Example Profile B", "description": "one line on who this segment is"}
+    ]
+  },
   "profiles": [],
   "salesforce_schema": {}
 }

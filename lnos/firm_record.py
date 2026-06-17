@@ -85,6 +85,7 @@ REQUIRED_FIELDS: tuple[str, ...] = tuple(DEFAULT_FIELD_OWNERS.keys())
 class NicheTaxonomy:
     available: bool
     profiles: tuple[str, ...] = ()
+    descriptions: dict = field(default_factory=dict)  # name -> one-line description
     salesforce_schema: dict = field(default_factory=dict)
     note: str = ""
 
@@ -95,7 +96,11 @@ class NicheTaxonomy:
 
 
 def load_niche_taxonomy(path: Optional[Path] = None) -> NicheTaxonomy:
-    """Load the eight Blue Ocean profiles. Empty/absent -> unavailable."""
+    """Load the Blue Ocean profiles. Empty/absent -> unavailable.
+
+    Accepts `profiles` as a list of names (strings) or a list of objects
+    {"name": ..., "description": ...}; descriptions improve auto-selection.
+    """
     p = Path(path) if path else NICHE_TAXONOMY_PATH
     if not p.exists():
         return NicheTaxonomy(False, note="taxonomy file absent")
@@ -103,13 +108,24 @@ def load_niche_taxonomy(path: Optional[Path] = None) -> NicheTaxonomy:
         data = json.loads(p.read_text())
     except (json.JSONDecodeError, OSError) as exc:
         return NicheTaxonomy(False, note=f"taxonomy unreadable: {exc}")
-    profiles = tuple(s for s in data.get("profiles", []) if isinstance(s, str) and s.strip())
-    if not profiles:
+
+    names: list[str] = []
+    descriptions: dict[str, str] = {}
+    for item in data.get("profiles", []):
+        if isinstance(item, str) and item.strip():
+            names.append(item.strip())
+        elif isinstance(item, dict) and (item.get("name") or "").strip():
+            nm = item["name"].strip()
+            names.append(nm)
+            if item.get("description"):
+                descriptions[nm] = str(item["description"]).strip()
+
+    if not names:
         return NicheTaxonomy(False, note="taxonomy present but profiles empty (NOT PROVIDED)")
     return NicheTaxonomy(
-        True, profiles=profiles,
+        True, profiles=tuple(names), descriptions=descriptions,
         salesforce_schema=data.get("salesforce_schema", {}) or {},
-        note=f"{len(profiles)} profiles loaded",
+        note=f"{len(names)} profiles loaded",
     )
 
 

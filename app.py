@@ -184,6 +184,24 @@ def auto_employers(county, cbsa):
         return ""
 
 
+@st.cache_data(show_spinner=False)
+def auto_niche(firm_id, profiles_sig, county, cbsa, employers, mhi, unemp, hpi, aum):
+    """Auto-select the firm's Blue Ocean niche from its data (Claude), returning
+    {profile, rationale} or None. Needs the taxonomy + ANTHROPIC_API_KEY."""
+    if not profiles_sig or not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    try:
+        from lnos import niche as niche_mod
+        sel = niche_mod.select_niche(
+            taxonomy=load_taxonomy(),
+            firm_context={"county": county, "cbsa": cbsa, "employers": employers,
+                          "mhi": mhi, "unemployment": unemp, "hpi": hpi, "aum": aum},
+            llm=brief_mod.ClaudeClient())
+        return {"profile": sel.profile, "rationale": sel.rationale} if sel.available else None
+    except Exception:
+        return None
+
+
 spine = load_spine()
 taxonomy = load_taxonomy()
 by_name = {f.roster_name: f for f in spine}
@@ -249,16 +267,34 @@ st.markdown(
 
 with st.expander("How this works", expanded=not existing):
     st.markdown(
-        "1. **Pick a firm** (left). Geography, AUM, the market snapshot and web "
-        "context auto-fill where keys allow.\n"
-        "2. **Provide the two inputs only you can**: the **Blue Ocean niche** and "
-        "the **approved disclosure block** (compliance rule: disclosure is never "
-        "auto-written).\n"
+        "1. **Pick a firm** (left). Geography, AUM, the market snapshot, local "
+        "employers, the approved disclosure, and the Blue Ocean niche all "
+        "auto-fill/auto-select from the firm's data.\n"
+        "2. **Review and override** anything (the niche shows the AI's reasoning).\n"
         "3. **Generate .docx** and download. Sections 2–4 are written by Claude "
-        "and run through the compliance lint; the snapshot shows live FRED/ACS "
-        "numbers once geography is resolved.\n\n"
-        "Still pending org-wide: the **§2.1 scoring spec** (automatic ranking) — "
-        "until then you hand-order the plays.")
+        "and run through the compliance lint.\n\n"
+        "Pending: load the **8 Blue Ocean profiles** (`data/blue_ocean_niches.json`) "
+        "to enable niche auto-select, and the **§2.1 scoring spec** for automatic "
+        "play ranking (until then plays use sensible defaults).")
+
+# --- auto-resolve snapshot + employers + niche (before the form) ------------
+sfips = geo_res.state_fips if geo_res else None
+cfips = geo_res.county_fips if geo_res else None
+snapshot = get_snapshot(firm.firm_id, sfips, cfips, firm.state)
+
+
+def _metric(key):
+    for m in snapshot.metrics:
+        if key in m.label.lower() and m.available:
+            return m.result.value
+    return None
+
+
+mhi_val, unemp_val, hpi_val = _metric("income"), _metric("unemployment"), _metric("home price")
+emp_default = auto_employers(county_auto, cbsa_auto)
+ai_niche = (auto_niche(firm.firm_id, tuple(taxonomy.profiles), county_auto, cbsa_auto,
+                       emp_default, mhi_val, unemp_val, hpi_val, firm.aum_usd)
+            if taxonomy.available else None)
 
 # --- firm record form -------------------------------------------------------
 st.header("1 · Firm record")
@@ -275,21 +311,29 @@ with st.container(border=True):
         cbsa = st.text_input("Metro / CBSA *", prefill.cbsa or cbsa_auto or "")
         niche_opts = list(taxonomy.profiles) if taxonomy.available else []
         if niche_opts:
-            niche = st.selectbox("Blue Ocean niche profile *", niche_opts,
-                                 index=niche_opts.index(prefill.niche_profile)
-                                 if prefill.niche_profile in niche_opts else 0)
+            default_niche = (prefill.niche_profile
+                             or (ai_niche and ai_niche["profile"]) or niche_opts[0])
+            niche = st.selectbox(
+                "Blue Ocean niche profile * (auto-selected — override if needed)",
+                niche_opts,
+                index=niche_opts.index(default_niche)
+                if default_niche in niche_opts else 0)
+            if ai_niche and ai_niche["profile"]:
+                st.caption(f"🤖 Auto-selected **{ai_niche['profile']}** — "
+                           f"{ai_niche['rationale']}")
+            elif os.environ.get("ANTHROPIC_API_KEY"):
+                st.caption("Auto-selection unavailable for this firm — defaulted; verify.")
         else:
-            niche = st.text_input("Blue Ocean niche profile * (taxonomy pending — type one)",
-                                  prefill.niche_profile or "")
+            niche = st.text_input(
+                "Blue Ocean niche profile * (paste the 8 profiles to enable auto-select)",
+                prefill.niche_profile or "")
     with c2:
         compliance_structure = st.selectbox(
             "Compliance structure *", [s.value for s in fr.ComplianceStructure],
             index=0 if (prefill.compliance_structure or "Carson").startswith("Carson") else 1)
-        emp_default = ", ".join(prefill.local_employers) or auto_employers(
-            county or county_auto, cbsa or cbsa_auto)
         local_employers = st.text_area(
             "Top local employers / sectors * (auto-filled from web)",
-            emp_default, height=70,
+            ", ".join(prefill.local_employers) or emp_default, height=70,
             help="Auto-pulled from the web for this market; edit if needed.")
         channel_inventory = st.text_area(
             "Channel inventory * (comma-separated)",
@@ -329,10 +373,7 @@ with right:
 st.header("2 · Local market snapshot")
 st.caption("Section 1 of the brief — FRED/ACS facts, no interpretation. "
            "Thin/unavailable sources are narrowed, never faked (§4.3).")
-sfips = geo_res.state_fips if geo_res else None
-cfips = geo_res.county_fips if geo_res else None
 with st.container(border=True):
-    snapshot = get_snapshot(firm.firm_id, sfips, cfips, firm.state)
     for m in snapshot.metrics:
         st.markdown(f"{'🟢' if m.available else '⚪'} {m.display()}")
     if snapshot.is_thin and not (geo_res and geo_res.has_fips):
