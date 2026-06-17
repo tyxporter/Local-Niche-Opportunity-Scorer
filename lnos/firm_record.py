@@ -86,20 +86,39 @@ class NicheTaxonomy:
     available: bool
     profiles: tuple[str, ...] = ()
     descriptions: dict = field(default_factory=dict)  # name -> one-line description
+    allow_other: bool = False          # taxonomy permits an off-list "Other"
     salesforce_schema: dict = field(default_factory=dict)
     note: str = ""
 
     def is_valid_profile(self, value: Optional[str]) -> bool:
-        if not value:
+        if not value or not value.strip():
             return False
-        return value.strip() in self.profiles
+        if value.strip() in self.profiles:
+            return True
+        return self.allow_other  # any specified value is acceptable when allowed
+
+
+def _profile_description(item: dict) -> str:
+    """Build a one-line description from the taxonomy schema."""
+    if item.get("description"):
+        return str(item["description"]).strip()
+    parts = []
+    if item.get("covers"):
+        parts.append(str(item["covers"]).strip())
+    if item.get("core_challenge"):
+        parts.append(str(item["core_challenge"]).strip())
+    if item.get("boundary"):
+        parts.append("Boundary: " + str(item["boundary"]).strip())
+    return " — ".join(parts)
 
 
 def load_niche_taxonomy(path: Optional[Path] = None) -> NicheTaxonomy:
     """Load the Blue Ocean profiles. Empty/absent -> unavailable.
 
-    Accepts `profiles` as a list of names (strings) or a list of objects
-    {"name": ..., "description": ...}; descriptions improve auto-selection.
+    Accepts `profiles` as a list of names (strings) or objects keyed by `name`
+    or `tag`, with a `description` or the richer `covers`/`core_challenge`/
+    `boundary` fields (which are combined into a description that sharpens
+    auto-selection). Honors a top-level `allow_other` flag.
     """
     p = Path(path) if path else NICHE_TAXONOMY_PATH
     if not p.exists():
@@ -114,16 +133,20 @@ def load_niche_taxonomy(path: Optional[Path] = None) -> NicheTaxonomy:
     for item in data.get("profiles", []):
         if isinstance(item, str) and item.strip():
             names.append(item.strip())
-        elif isinstance(item, dict) and (item.get("name") or "").strip():
-            nm = item["name"].strip()
+        elif isinstance(item, dict):
+            nm = (item.get("name") or item.get("tag") or "").strip()
+            if not nm:
+                continue
             names.append(nm)
-            if item.get("description"):
-                descriptions[nm] = str(item["description"]).strip()
+            desc = _profile_description(item)
+            if desc:
+                descriptions[nm] = desc
 
     if not names:
         return NicheTaxonomy(False, note="taxonomy present but profiles empty (NOT PROVIDED)")
     return NicheTaxonomy(
         True, profiles=tuple(names), descriptions=descriptions,
+        allow_other=bool(data.get("allow_other", False)),
         salesforce_schema=data.get("salesforce_schema", {}) or {},
         note=f"{len(names)} profiles loaded",
     )

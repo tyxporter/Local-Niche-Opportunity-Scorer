@@ -100,7 +100,11 @@ def test_save_load_roundtrip(tmp_path, monkeypatch):
     assert loaded.channel_inventory == ["email", "seminars"]
 
 
-def test_shipped_taxonomy_is_not_provided():
-    # The real taxonomy file is a placeholder until Ty supplies it.
+def test_shipped_taxonomy_has_eight_profiles():
+    # The real taxonomy is now provided (8 Blue Ocean profiles, allow_other).
     tax = fr.load_niche_taxonomy()
-    assert tax.available is False
+    assert tax.available is True
+    assert len(tax.profiles) == 8
+    assert "Equity Concentrator" in tax.profiles
+    assert tax.allow_other is True
+    assert tax.descriptions.get("Compressed Earner")

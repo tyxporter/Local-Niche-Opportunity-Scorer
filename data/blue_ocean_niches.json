@@ -1,12 +1,57 @@
 {
-  "_status": "NOT PROVIDED — placeholder. Open item #4.",
-  "_instructions": "Add the eight Blue Ocean profiles. Either a plain list of names, or (recommended) objects with a one-line description each — descriptions make the app's auto-selection of a firm's niche much more accurate. The app classifies each firm into exactly one of these from its data (geography, income, employers, AUM) and shows its reasoning; you can override. Provide from Ty's Blue Ocean framework — never guessed.",
-  "_format_example": {
-    "profiles": [
-      {"name": "Example Profile A", "description": "one line on who this segment is"},
-      {"name": "Example Profile B", "description": "one line on who this segment is"}
-    ]
-  },
-  "profiles": [],
-  "salesforce_schema": {}
+  "version": "1.0",
+  "updated": "2026-06-11",
+  "note": "Eight Blue Ocean niche profiles for the Local Niche Opportunity Scorer + Local Marketing Opportunity Brief. Names describe the WEALTH TRANSITION, not demographics — that is what makes a niche ownable. Salesforce field mapping intentionally omitted: as of 2026-06-11 these are NOT in Salesforce, so there is no Segment_Tag__c picklist to reconcile against yet. When the field is created, the Salesforce picklist becomes canonical and this list must mirror it exactly.",
+  "allow_other": true,
+  "profiles": [
+    {
+      "tag": "Compressed Earner",
+      "covers": "Pro athletes, esports competitors, entertainers",
+      "core_challenge": "Compressing a lifetime of wealth creation into a 5–10 year competitive earning window.",
+      "maps_from": "Short-Clock Athlete"
+    },
+    {
+      "tag": "Platform Founder",
+      "covers": "Creators, influencers, digital educators — businesses built on audience attention",
+      "core_challenge": "Converting volatile, attention-based platform income into durable, transferable wealth.",
+      "boundary": "Income derived from audience/content — NOT a single-security/equity event (that is Equity Concentrator).",
+      "maps_from": "Creator-Entrepreneur"
+    },
+    {
+      "tag": "Exit-Ready Operator",
+      "covers": "Trade- and service-business owners approaching a sale or succession",
+      "core_challenge": "Turning an illiquid, privately held business into retirement security without destroying the legacy.",
+      "maps_from": "Trades Titan"
+    },
+    {
+      "tag": "Family Balance Sheet",
+      "covers": "Multigenerational households operating as a single economic unit",
+      "core_challenge": "Managing wealth, property, and caregiving across generations under one financial roof.",
+      "maps_from": "Pooled-Resource Household"
+    },
+    {
+      "tag": "Accidental CFO",
+      "covers": "Widows, gray divorcees, sudden inheritors",
+      "core_challenge": "Taking sole control of complex financial decisions after loss, divorce, or disruption they never expected to manage.",
+      "maps_from": "Suddenly Single Woman"
+    },
+    {
+      "tag": "Equity Concentrator",
+      "covers": "Post-IPO employees, startup executives, founders with a liquidity event",
+      "core_challenge": "Transforming net worth dominated by one security or single event into diversified, generational wealth.",
+      "maps_from": "Post-IPO Tech Employee"
+    },
+    {
+      "tag": "Early Independence Seeker",
+      "covers": "FIRE-adjacent professionals, mini-retirees, early financial-independence households",
+      "core_challenge": "Sustaining decades of financial freedom before traditional retirement age.",
+      "maps_from": "Early Retiree"
+    },
+    {
+      "tag": "Dual-Care Executive",
+      "covers": "Mid-career professionals funding children while coordinating aging-parent care",
+      "core_challenge": "Funding children's futures while managing aging-parent care across households and states.",
+      "maps_from": "Sandwich Executive"
+    }
+  ]
 }

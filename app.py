@@ -309,15 +309,18 @@ with st.container(border=True):
         legal_name = st.text_input("Firm legal name *", prefill.legal_name or "")
         county = st.text_input("County *", prefill.county or county_auto or "")
         cbsa = st.text_input("Metro / CBSA *", prefill.cbsa or cbsa_auto or "")
-        niche_opts = list(taxonomy.profiles) if taxonomy.available else []
-        if niche_opts:
+        if taxonomy.available:
+            opts = list(taxonomy.profiles)
+            if taxonomy.allow_other:
+                opts = opts + ["Other (specify)"]
             default_niche = (prefill.niche_profile
-                             or (ai_niche and ai_niche["profile"]) or niche_opts[0])
-            niche = st.selectbox(
+                             or (ai_niche and ai_niche["profile"]) or opts[0])
+            pick = st.selectbox(
                 "Blue Ocean niche profile * (auto-selected — override if needed)",
-                niche_opts,
-                index=niche_opts.index(default_niche)
-                if default_niche in niche_opts else 0)
+                opts, index=opts.index(default_niche) if default_niche in opts else 0,
+                help="Wealth-transition segments. The app auto-selects from firm data.")
+            niche = (st.text_input("Specify niche", prefill.niche_profile or "")
+                     if pick == "Other (specify)" else pick)
             if ai_niche and ai_niche["profile"]:
                 st.caption(f"🤖 Auto-selected **{ai_niche['profile']}** — "
                            f"{ai_niche['rationale']}")
@@ -325,7 +328,7 @@ with st.container(border=True):
                 st.caption("Auto-selection unavailable for this firm — defaulted; verify.")
         else:
             niche = st.text_input(
-                "Blue Ocean niche profile * (paste the 8 profiles to enable auto-select)",
+                "Blue Ocean niche profile * (taxonomy unreadable — type one)",
                 prefill.niche_profile or "")
     with c2:
         compliance_structure = st.selectbox(
