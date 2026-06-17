@@ -67,6 +67,7 @@ def build_snapshot(
     *,
     state_fips: Optional[str] = None,
     county_fips: Optional[str] = None,
+    state_abbr: Optional[str] = None,
     acs_year: int = census.DEFAULT_ACS_YEAR,
 ) -> Snapshot:
     """Build the section-1 snapshot for a firm's market.
@@ -86,17 +87,20 @@ def build_snapshot(
     # FRED spine: county unemployment (LAUS).
     unemp = fred.fetch_series_latest(
         fred.county_unemployment_series(state_fips, county_fips), units="%")
-    metrics.append(SnapshotMetric("County unemployment rate", unemp))
+    metrics.append(SnapshotMetric("County unemployment rate (annual avg)", unemp))
 
     # ACS market-structure: median household income.
     mhi = census.fetch_median_household_income(state_fips, county_fips, year=acs_year)
     metrics.append(SnapshotMetric("Median household income", mhi))
 
-    # Housing trend is wired per-market via a FRED HPI/permits series id; until a
-    # market's series is mapped we narrow rather than invent one.
-    metrics.append(SnapshotMetric(
-        "Home price trend",
-        SignalResult.unavailable(
-            "fred", "housing series not mapped for this market yet; omitted.")))
+    # FRED housing: state All-Transactions House Price Index (reliable, always
+    # available per state). Metro-level HPI can be wired later via CBSA.
+    if state_abbr:
+        hpi = fred.fetch_series_latest(fred.state_hpi_series(state_abbr), units="index")
+        metrics.append(SnapshotMetric("Home price index (state)", hpi))
+    else:
+        metrics.append(SnapshotMetric(
+            "Home price index",
+            SignalResult.unavailable("fred", "state not resolved; HPI omitted.")))
 
     return Snapshot(firm_id=firm_id, metrics=metrics)

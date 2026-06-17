@@ -19,7 +19,7 @@ def test_fred_without_key_is_unavailable_not_fabricated(monkeypatch):
 
 
 def test_fred_county_series_id_format():
-    assert fred.county_unemployment_series("31", "055") == "LAUCN310550000000003"
+    assert fred.county_unemployment_series("31", "055") == "LAUCN310550000000003A"
 
 
 def test_trends_empty_keywords_unavailable():

@@ -27,11 +27,19 @@ _BASE = "https://api.stlouisfed.org/fred/series/observations"
 
 
 def county_unemployment_series(state_fips: str, county_fips: str) -> str:
-    """LAUS county unemployment RATE series id.
+    """LAUS county unemployment RATE series id (annual average).
 
-    Format: LAUCN{state2}{county3}0000000003  (measure 03 = unemployment rate).
+    Format: LAUCN{state2}{county3}0000000003A  (measure 03 = unemployment rate;
+    trailing 'A' = annual). FRED hosts the FIPS-constructible county series only
+    as the annual average; the monthly equivalents use non-deterministic ids
+    ({STATE}{COUNTYABBR}{n}URN), so we use the annual series for reliability.
     """
-    return f"LAUCN{state_fips:0>2}{county_fips:0>3}0000000003"
+    return f"LAUCN{state_fips:0>2}{county_fips:0>3}0000000003A"
+
+
+def state_hpi_series(state_abbr: str) -> str:
+    """All-Transactions House Price Index for a state, e.g. NESTHPI (quarterly)."""
+    return f"{state_abbr.strip().upper()}STHPI"
 
 
 def fetch_series_latest(
@@ -63,8 +71,16 @@ def fetch_series_latest(
         resp.raise_for_status()
         obs = resp.json().get("observations", [])
     except Exception as exc:  # noqa: BLE001 - degrade gracefully (§4.3)
+        detail = type(exc).__name__
+        resp_obj = getattr(exc, "response", None)
+        if resp_obj is not None:
+            try:
+                detail = f"HTTP {resp_obj.status_code}: " \
+                         f"{resp_obj.json().get('error_message', resp_obj.text[:120])}"
+            except Exception:  # noqa: BLE001
+                detail = f"HTTP {resp_obj.status_code}"
         return SignalResult.unavailable(
-            SOURCE, f"FRED series {series_id} unavailable: {type(exc).__name__}.")
+            SOURCE, f"FRED series {series_id} unavailable ({detail}).")
 
     obs = [o for o in obs if o.get("value") not in (None, ".", "")]
     if not obs:

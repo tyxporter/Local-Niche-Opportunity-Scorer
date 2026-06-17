@@ -52,6 +52,7 @@ from lnos import delivery as delivery_mod           # noqa: E402
 from lnos import docx_export                        # noqa: E402
 from lnos import customsearch                       # noqa: E402
 from lnos import geocode as geocode_mod             # noqa: E402
+from lnos import disclosures as disclosures_mod      # noqa: E402
 from lnos.brief import RankedPlay, Brief, BlockedBrief, LLMUnavailable  # noqa: E402
 from lnos.compliance import ComplianceBlocked       # noqa: E402
 
@@ -153,9 +154,34 @@ def resolve_geo(city, state):
 
 
 @st.cache_data(show_spinner=False)
-def get_snapshot(firm_id, state_fips, county_fips):
+def get_snapshot(firm_id, state_fips, county_fips, state_abbr):
     return snap_mod.build_snapshot(firm_id, state_fips=state_fips,
-                                   county_fips=county_fips)
+                                   county_fips=county_fips, state_abbr=state_abbr)
+
+
+@st.cache_data(show_spinner=False)
+def auto_employers(county, cbsa):
+    """Best-effort auto-fill of local employers/sectors from the web (CSE),
+    distilled to a short comma list by Claude when available. Empty on any
+    miss — never fabricated, never blocks."""
+    if not os.environ.get("GOOGLE_CSE_KEY"):
+        return ""
+    snips = customsearch.employer_context_snippets(county=county, cbsa=cbsa)
+    if not snips:
+        return ""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return ""
+    try:
+        llm = brief_mod.ClaudeClient()
+        txt = llm.complete(
+            system=("Extract only a comma-separated list (max 6) of the top local "
+                    "employers or dominant sectors named in the text. Output just "
+                    "the list — no prose, no numbering."),
+            prompt="Snippets:\n" + "\n".join(snips), temperature=0)
+        items = [s.strip() for s in txt.replace("\n", ",").split(",") if s.strip()]
+        return ", ".join(items[:6])
+    except Exception:
+        return ""
 
 
 spine = load_spine()
@@ -259,29 +285,23 @@ with st.container(border=True):
         compliance_structure = st.selectbox(
             "Compliance structure *", [s.value for s in fr.ComplianceStructure],
             index=0 if (prefill.compliance_structure or "Carson").startswith("Carson") else 1)
+        emp_default = ", ".join(prefill.local_employers) or auto_employers(
+            county or county_auto, cbsa or cbsa_auto)
         local_employers = st.text_area(
-            "Top local employers / sectors * (comma-separated)",
-            ", ".join(prefill.local_employers), height=70,
-            help="Click ‘Find local employers’ below to pull suggestions from the web.")
+            "Top local employers / sectors * (auto-filled from web)",
+            emp_default, height=70,
+            help="Auto-pulled from the web for this market; edit if needed.")
         channel_inventory = st.text_area(
             "Channel inventory * (comma-separated)",
             ", ".join(prefill.channel_inventory) or DEFAULT_CHANNELS, height=70)
+    # Disclosure auto-fills VERBATIM from the approved block for this compliance
+    # structure (never drafted — §4.4). Switching the structure swaps the block.
+    disc_default = prefill.disclosure_block or disclosures_mod.for_structure(
+        compliance_structure)
     disclosure_block = st.text_area(
-        "Approved disclosure block * (verbatim — never generated)",
-        prefill.disclosure_block or "", height=90,
-        help="Paste the firm's compliance-approved disclosure exactly. Required.")
-
-    if have_cse and st.button("🔎 Find local employers (web)"):
-        with st.spinner("Searching…"):
-            snips = customsearch.employer_context_snippets(
-                county=county or county_auto, cbsa=cbsa or cbsa_auto)
-        if snips:
-            st.info("Web findings — copy the relevant employers/sectors into the "
-                    "field above:")
-            for s in snips:
-                st.markdown(f"- {s}")
-        else:
-            st.caption("No web findings (check geography / CSE quota).")
+        "Approved disclosure block * (verbatim — auto-filled by structure)",
+        disc_default, height=120,
+        help="Auto-filled from compliance's approved block for this structure.")
 
 record = fr.FirmRecord(
     firm_id=firm.firm_id, legal_name=legal_name or None, county=county or None,
@@ -312,7 +332,7 @@ st.caption("Section 1 of the brief — FRED/ACS facts, no interpretation. "
 sfips = geo_res.state_fips if geo_res else None
 cfips = geo_res.county_fips if geo_res else None
 with st.container(border=True):
-    snapshot = get_snapshot(firm.firm_id, sfips, cfips)
+    snapshot = get_snapshot(firm.firm_id, sfips, cfips, firm.state)
     for m in snapshot.metrics:
         st.markdown(f"{'🟢' if m.available else '⚪'} {m.display()}")
     if snapshot.is_thin and not (geo_res and geo_res.has_fips):
